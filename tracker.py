@@ -4,7 +4,6 @@ Custom object tracker with class locking and speed calculation.
 import numpy as np
 from collections import deque
 from typing import Dict, List, Tuple, Optional
-import cv2
 from utils import calculate_detection_overlap, calculate_bbox_overlap
 
 
@@ -212,174 +211,78 @@ class CustomTracker:
                 - 'mask': optional binary mask
                 - 'bbox': optional bounding box
         """
-        # Mark all objects as missing initially
-        for obj_id, obj in self.objects.items():
+        # Mark all objects missing for this frame; matched objects reset to 0 in TrackedObject.update().
+        for obj in self.objects.values():
             obj.mark_missing()
-        
-        # If no detections, just mark objects as missing
-        if len(detections) == 0:
-            # Remove objects that have been missing too long
-            to_remove = [obj_id for obj_id, obj in self.objects.items() 
-                        if obj.disappeared >= self.max_disappeared]
+
+        # If no detections, remove stale objects and exit.
+        if not detections:
+            to_remove = [obj_id for obj_id, obj in self.objects.items() if obj.disappeared >= self.max_disappeared]
             for obj_id in to_remove:
                 del self.objects[obj_id]
             return
-        
-        # STEP 1: Filter out overlapping detections from raw detection list
-        # This prevents duplicate objects from being created
-        filtered_detections = []
-        detection_indices_to_keep = []
-        
-        for i, det in enumerate(detections):
-            overlaps_with_kept = False
-            
-            # Check if this detection overlaps with any already kept detection
+
+        # STEP 1: Filter out overlapping detections to avoid duplicates.
+        filtered_detections: List[Dict] = []
+        for det in detections:
+            replaced = False
             for j, kept_det in enumerate(filtered_detections):
                 if calculate_detection_overlap(det, kept_det, overlap_threshold=0.5, bbox_format="xywh"):
-                    overlaps_with_kept = True
-                    # If current detection has higher confidence, replace the kept one
-                    if det.get('confidence', 0) > kept_det.get('confidence', 0):
+                    if det.get('confidence', 0.0) > kept_det.get('confidence', 0.0):
                         filtered_detections[j] = det
-                        detection_indices_to_keep[j] = i
+                    replaced = True
                     break
-            
-            if not overlaps_with_kept:
+            if not replaced:
                 filtered_detections.append(det)
-                detection_indices_to_keep.append(i)
-        
-        # Use filtered detections for matching
         detections = filtered_detections
-        
-        # STEP 2: Match detections to existing objects by distance
-        matched_detections = set()
+
+        # STEP 2: Greedy distance matching between existing objects and detections.
+        object_items = list(self.objects.items())
         matched_objects = set()
-        
-        # First pass: match objects that haven't disappeared
-        for obj_id, obj in self.objects.items():
-            if obj.disappeared == 0:
-                continue  # Already matched in this frame
-            
-            best_match = None
-            best_distance = float('inf')
-            
-            for i, det in enumerate(detections):
-                if i in matched_detections:
+        matched_detections = set()
+
+        if object_items:
+            candidate_pairs = []
+            for obj_id, obj in object_items:
+                for det_idx, det in enumerate(detections):
+                    distance = self._calculate_distance(obj.centroid, det['centroid'])
+                    if distance < self.max_distance:
+                        candidate_pairs.append((distance, obj_id, det_idx))
+
+            candidate_pairs.sort(key=lambda x: x[0])
+            for _, obj_id, det_idx in candidate_pairs:
+                if obj_id in matched_objects or det_idx in matched_detections:
                     continue
-                
-                distance = self._calculate_distance(obj.centroid, det['centroid'])
-                if distance < self.max_distance and distance < best_distance:
-                    best_match = i
-                    best_distance = distance
-            
-            if best_match is not None:
-                det = detections[best_match]
-                obj.update(
+                det = detections[det_idx]
+                self.objects[obj_id].update(
                     det['centroid'],
                     det['class_id'],
                     det['confidence'],
                     det.get('mask'),
                     det.get('bbox')
                 )
-                matched_detections.add(best_match)
                 matched_objects.add(obj_id)
-        
-        # Second pass: match disappeared objects (reidentification)
-        for obj_id, obj in self.objects.items():
-            if obj_id in matched_objects:
+                matched_detections.add(det_idx)
+
+        # STEP 3: Create new objects for any unmatched detections.
+        for det_idx, det in enumerate(detections):
+            if det_idx in matched_detections:
                 continue
-            
-            if obj.disappeared >= self.max_disappeared:
-                continue  # Too long disappeared, don't try to match
-            
-            best_match = None
-            best_distance = float('inf')
-            
-            for i, det in enumerate(detections):
-                if i in matched_detections:
-                    continue
-                
-                distance = self._calculate_distance(obj.centroid, det['centroid'])
-                if distance < self.max_distance and distance < best_distance:
-                    best_match = i
-                    best_distance = distance
-            
-            if best_match is not None:
-                det = detections[best_match]
-                obj.update(
-                    det['centroid'],
-                    det['class_id'],
-                    det['confidence'],
-                    det.get('mask'),
-                    det.get('bbox')
-                )
-                matched_detections.add(best_match)
-                matched_objects.add(obj_id)
-        
-        # STEP 3: Check unmatched detections for overlap with existing objects
-        # (even if they weren't matched by distance - this catches cases where
-        # an object moved but still overlaps with a detection)
-        for obj_id, obj in self.objects.items():
-            if obj_id in matched_objects:
-                continue  # Already matched
-            
-            best_match = None
-            best_overlap_ratio = 0.0
-            
-            for i, det in enumerate(detections):
-                if i in matched_detections:
-                    continue
-                
-                # Create a detection dict from the tracked object for comparison
-                obj_det = {
-                    'centroid': obj.centroid,
-                    'mask': obj.mask,
-                    'bbox': obj.bbox
-                }
-                
-                # Calculate overlap ratio
-                if False and obj_det.get('mask') is not None and det.get('mask') is not None:
-                    overlap_ratio = calculate_mask_overlap(obj_det['mask'], det['mask'])
-                elif obj_det.get('bbox') is not None and det.get('bbox') is not None:
-                    overlap_ratio = calculate_bbox_overlap(obj_det['bbox'], det['bbox'])
-                else:
-                    continue
-                
-                if overlap_ratio >= 0.5 and overlap_ratio > best_overlap_ratio:
-                    best_match = i
-                    best_overlap_ratio = overlap_ratio
-            
-            if best_match is not None:
-                det = detections[best_match]
-                obj.update(
-                    det['centroid'],
-                    det['class_id'],
-                    det['confidence'],
-                    det.get('mask'),
-                    det.get('bbox')
-                )
-                matched_detections.add(best_match)
-                matched_objects.add(obj_id)
-        
-        # STEP 4: Create new objects for remaining unmatched detections
-        # (These have already been filtered for overlaps in STEP 1)
-        for i, det in enumerate(detections):
-            if i not in matched_detections:
-                new_obj = TrackedObject(
-                    self.next_id,
-                    det['centroid'],
-                    det['class_id'],
-                    det['confidence'],
-                    det.get('mask'),
-                    det.get('bbox'),
-                    self.class_lock_threshold,
-                    self.class_change_threshold,
-                    self.class_change_frames
-                )
-                self.objects[self.next_id] = new_obj
-                self.next_id += 1
-        
-        # STEP 5: Check for overlapping tracked objects and merge them
-        # (Keep the oldest ID when merging)
+            new_obj = TrackedObject(
+                self.next_id,
+                det['centroid'],
+                det['class_id'],
+                det['confidence'],
+                det.get('mask'),
+                det.get('bbox'),
+                self.class_lock_threshold,
+                self.class_change_threshold,
+                self.class_change_frames
+            )
+            self.objects[self.next_id] = new_obj
+            self.next_id += 1
+
+        # STEP 4: Merge overlapping tracked objects (keep oldest ID).
         objects_to_remove = set()
         object_list = list(self.objects.items())
         
@@ -403,7 +306,7 @@ class CustomTracker:
                     'bbox': obj2.bbox
                 }
                 
-                if calculate_detection_overlap(obj1_det, obj2_det, overlap_threshold=0.5):
+                if calculate_detection_overlap(obj1_det, obj2_det, overlap_threshold=0.5, bbox_format="xywh"):
                     # Objects overlap - keep the one with older ID (smaller number)
                     if obj_id1 < obj_id2:
                         # Keep obj1, remove obj2
@@ -419,8 +322,7 @@ class CustomTracker:
                 del self.objects[obj_id]
         
         # Remove objects that have been missing too long
-        to_remove = [obj_id for obj_id, obj in self.objects.items() 
-                    if obj.disappeared >= self.max_disappeared and obj_id not in matched_objects]
+        to_remove = [obj_id for obj_id, obj in self.objects.items() if obj.disappeared >= self.max_disappeared]
         for obj_id in to_remove:
             del self.objects[obj_id]
     

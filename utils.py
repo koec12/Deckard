@@ -5,7 +5,20 @@ import cv2
 import numpy as np
 
 
-def preprocess_image(image, clahe_clip_limit=2.0, clahe_tile_grid_size=(8, 8)):
+_CLAHE_CACHE = {}
+
+
+def get_clahe(clahe_clip_limit=2.0, clahe_tile_grid_size=(8, 8)):
+    """Get (and cache) a CLAHE instance for the given parameters."""
+    key = (float(clahe_clip_limit), tuple(clahe_tile_grid_size))
+    clahe = _CLAHE_CACHE.get(key)
+    if clahe is None:
+        clahe = cv2.createCLAHE(clipLimit=key[0], tileGridSize=key[1])
+        _CLAHE_CACHE[key] = clahe
+    return clahe
+
+
+def preprocess_image(image, clahe_clip_limit=2.0, clahe_tile_grid_size=(8, 8), clahe=None):
     """
     Preprocess image by converting to LAB color space and applying CLAHE on L channel.
     
@@ -24,7 +37,8 @@ def preprocess_image(image, clahe_clip_limit=2.0, clahe_tile_grid_size=(8, 8)):
     l_channel = lab[:, :, 0]
     
     # Apply CLAHE to L channel
-    clahe = cv2.createCLAHE(clipLimit=clahe_clip_limit, tileGridSize=clahe_tile_grid_size)
+    if clahe is None:
+        clahe = get_clahe(clahe_clip_limit, clahe_tile_grid_size)
     l_channel_enhanced = clahe.apply(l_channel)
     
     # Merge channels back

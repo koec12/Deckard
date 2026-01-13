@@ -32,6 +32,8 @@ class CylinderTrackerApp:
         self.model_path = self.config['model']['path']
         self.conf_threshold = self.config['model']['conf_threshold']
         self.iou_threshold = self.config['model']['iou_threshold']
+        self.use_masks = bool(self.config['model']['use_masks'])
+        self.yolo_task = self.config['model']['task']
         
         # ROI settings
         self.max_rois = self.config['roi']['max_count']
@@ -55,6 +57,10 @@ class CylinderTrackerApp:
         # Preprocessing settings
         self.clahe_clip_limit = self.config['preprocessing']['clahe_clip_limit']
         self.clahe_tile_grid_size = tuple(self.config['preprocessing']['clahe_tile_grid_size'])
+        self._clahe = cv2.createCLAHE(
+            clipLimit=self.clahe_clip_limit,
+            tileGridSize=self.clahe_tile_grid_size,
+        )
         
         # Modbus settings
         modbus_config = self.config['modbus']
@@ -155,37 +161,39 @@ class CylinderTrackerApp:
         
         if results and len(results) > 0:
             result = results[0]
-            
-            if result.masks is not None and result.boxes is not None:
-                boxes = result.boxes
-                masks = result.masks
-                
-                for i in range(len(boxes)):
-                    # Get box data
-                    box = boxes[i]
-                    class_id = int(box.cls[0])
-                    confidence = float(box.conf[0])
-                    
-                    # Get mask
+
+            if result.boxes is None:
+                return detections
+
+            boxes = result.boxes
+            masks = result.masks if self.use_masks else None
+            orig_h, orig_w = result.orig_shape
+
+            for i in range(len(boxes)):
+                box = boxes[i]
+                class_id = int(box.cls[0])
+                confidence = float(box.conf[0])
+
+                bbox = box.xyxy[0].cpu().numpy()
+                x1, y1, x2, y2 = bbox
+                bbox_tuple = (int(x1), int(y1), int(x2 - x1), int(y2 - y1))
+
+                # Centroid from bbox center (cheap + stable)
+                centroid = get_centroid_from_bbox(bbox, fmt="xyxy")
+
+                mask_binary = None
+                if masks is not None and getattr(masks, 'data', None) is not None and i < len(masks.data):
                     mask = masks.data[i].cpu().numpy()
-                    mask_resized = cv2.resize(mask, (result.orig_shape[1], result.orig_shape[0]))
+                    mask_resized = cv2.resize(mask, (orig_w, orig_h))
                     mask_binary = (mask_resized > 0.5).astype(np.uint8) * 255
-                    
-                    # Get bounding box
-                    bbox = box.xyxy[0].cpu().numpy()
-                    x1, y1, x2, y2 = bbox
-                    bbox_tuple = (int(x1), int(y1), int(x2-x1), int(y2-y1))
-                    
-                    # Calculate centroid from mask
-                    centroid = get_centroid_from_bbox(bbox, fmt="xyxy")
-                    
-                    detections.append({
-                        'centroid': centroid,
-                        'class_id': class_id,
-                        'confidence': confidence,
-                        'mask': mask_binary,
-                        'bbox': bbox_tuple
-                    })
+
+                detections.append({
+                    'centroid': centroid,
+                    'class_id': class_id,
+                    'confidence': confidence,
+                    'mask': mask_binary,
+                    'bbox': bbox_tuple
+                })
         
         return detections
     
@@ -226,18 +234,26 @@ class CylinderTrackerApp:
             (text_width, text_height), baseline = cv2.getTextSize(
                 label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
             )
-            cv2.rectangle(
-                frame,
-                (cx - 5, cy - text_height - 10),
-                (cx + text_width + 5, cy),
-                color,
-                -1
-            )
+
+            frame_h, frame_w = frame.shape[:2]
+            tx = cx
+            ty = cy - 5
+            if tx + text_width + 5 >= frame_w:
+                tx = max(0, frame_w - text_width - 6)
+            if ty - text_height - 5 <= 0:
+                ty = text_height + 6
+
+            bg_x1 = max(0, tx - 5)
+            bg_y1 = max(0, ty - text_height - 5)
+            bg_x2 = min(frame_w - 1, tx + text_width + 5)
+            bg_y2 = min(frame_h - 1, ty + 5)
+            if bg_x2 > bg_x1 and bg_y2 > bg_y1:
+                cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), color, -1)
             
             # Label text
             cv2.putText(
                 frame, label,
-                (cx, cy - 5),
+                (tx, ty),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                 (255, 255, 255) if sum(color) < 400 else (0, 0, 0),
                 1
@@ -271,13 +287,14 @@ class CylinderTrackerApp:
                 processed_frame = preprocess_image(
                     frame,
                     self.clahe_clip_limit,
-                    self.clahe_tile_grid_size
+                    self.clahe_tile_grid_size,
+                    clahe=self._clahe,
                 )
                 
                 # Run YOLO detection
                 results = self.model.predict(
                     processed_frame,
-                    task="segment",
+                    task=self.yolo_task,
                     conf=self.conf_threshold,
                     iou=self.iou_threshold,
                     verbose=False

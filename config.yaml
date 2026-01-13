@@ -10,6 +10,8 @@ camera:
 # YOLO model settings
 model:
   path: "models/enhanced_V4_180epoch.pt"  # Path to YOLO segmentation model
+  task: "segment" # Task type: 'segment' for segmentation, 'detect' for detection
+  use_masks: false  # Whether to use masks for segmentation
   conf_threshold: 0.6  # Confidence threshold for detections
   iou_threshold: 0.75  # IoU threshold for NMS
 

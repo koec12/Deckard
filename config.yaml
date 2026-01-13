@@ -1,0 +1,57 @@
+# Configuration file for Cylinder Tracking System
+
+# Camera settings
+camera:
+  source: 0  # Camera source (0 for default webcam, or path to video file)
+  #source: "./media/video6.mp4"
+  width: 960
+  height: 540
+
+# YOLO model settings
+model:
+  path: "models/enhanced_V4_180epoch.pt"  # Path to YOLO segmentation model
+  conf_threshold: 0.6  # Confidence threshold for detections
+  iou_threshold: 0.75  # IoU threshold for NMS
+
+# ROI settings
+roi:
+  max_count: 1  # Maximum number of ROIs (0-9)
+  colors:  # Colors for each ROI (BGR format)
+    - [255, 0, 0]    # Blue for ROI 1
+    - [0, 255, 0]    # Green for ROI 2
+    - [0, 0, 255]    # Red for ROI 3
+    - [255, 255, 0]  # Cyan for ROI 4
+    - [255, 0, 255]  # Magenta for ROI 5
+    - [0, 255, 255]  # Yellow for ROI 6
+    - [128, 0, 128]  # Purple for ROI 7
+    - [255, 165, 0]  # Orange for ROI 8
+    - [128, 128, 128] # Gray for ROI 9
+
+# Object class colors (BGR format)
+# Class 0: Black, Class 1: Red, Class 2: Silver
+class_colors:
+  - [0, 0, 0]      # Black (Class 0)
+  - [0, 0, 255]    # Red (Class 1)
+  - [192, 192, 192] # Silver (Class 2)
+
+# Tracker settings
+tracker:
+  class_lock_threshold: 0.8  # Confidence threshold to lock class
+  class_change_threshold: 0.9  # Confidence threshold to allow class change
+  class_change_frames: 5  # Number of frames above threshold to allow class change
+  max_disappeared: 10  # Max frames before object is considered lost
+  #max_distance: 100  # Max pixel distance for reidentification OK when 640x640
+  max_distance: 250  # Max pixel distance for reidentification OK when 1280x1280
+  pixels_per_cm: 10.0  # Ratio of pixels to centimeters for speed calculation
+
+# Image preprocessing
+preprocessing:
+  clahe_clip_limit: 2.5
+  clahe_tile_grid_size: [8, 8]
+
+# Modbus TCP Server settings
+modbus:
+  host: "0.0.0.0"  # Listen on all interfaces
+  port: 10502  # Standard Modbus TCP port
+  max_objects_per_roi: 99  # Maximum number of objects to track per ROI
+

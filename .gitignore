@@ -1,0 +1,71 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Packaging / build artifacts
+build/
+dist/
+.eggs/
+*.egg-info/
+
+# Test / coverage / type-check caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Local environment files
+.env
+.env.*
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# IDEs/editors
+.vscode/
+.idea/
+*.iml
+
+# Ultralytics / ML tooling outputs
+runs/
+wandb/
+mlruns/
+
+# Project data & large artifacts
+# - media/ contains large video files used for testing
+# - models/ contains model weights in various formats
+media/
+models/**/*.pt
+models/**/*.pth
+models/**/*.ckpt
+
+# Common large binary formats (kept broad on purpose)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.onnx
+*.engine
+*.tflite
+*.mlpackage

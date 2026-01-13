@@ -1,7 +1,7 @@
-"""
-Modbus TCP Server for exposing ROI detection status and object information.
-"""
-from pymodbus.server import StartTcpServer
+"""Modbus TCP server for exposing ROI detection status and object information."""
+
+import asyncio
+from pymodbus.server import StartTcpServer, ModbusTcpServer
 from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext
 from pymodbus.datastore import ModbusSequentialDataBlock
@@ -145,6 +145,8 @@ class ModbusServer:
         self.data_store = ModbusDataStore(max_rois, max_objects_per_roi)
         self.server_thread = None
         self.running = False
+        self._server = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         
         # Device identification
         self.identity = ModbusDeviceIdentification()
@@ -162,13 +164,39 @@ class ModbusServer:
         
         def run_server():
             try:
-                StartTcpServer(
-                    context=self.data_store.server_context,
-                    identity=self.identity,
-                    address=(self.host, self.port)
-                )
+                if ModbusTcpServer is not None:
+                    # pymodbus 3.x servers are asyncio-based; create a loop in this thread.
+                    self._loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(self._loop)
+
+                    async def _serve() -> None:
+                        # Important: create the server while the loop is running.
+                        self._server = ModbusTcpServer(
+                            context=self.data_store.server_context,
+                            identity=self.identity,
+                            address=(self.host, self.port),
+                        )
+                        await self._server.serve_forever()
+
+                    # Blocks until shutdown is requested.
+                    self._loop.run_until_complete(_serve())
+                else:
+                    # Very old pymodbus fallback (blocking, no clean shutdown).
+                    StartTcpServer(
+                        context=self.data_store.server_context,
+                        identity=self.identity,
+                        address=(self.host, self.port),
+                    )
             except Exception as e:
                 print(f"Modbus server error: {e}")
+            finally:
+                loop = self._loop
+                self._loop = None
+                if loop is not None:
+                    try:
+                        loop.close()
+                    except Exception:
+                        pass
         
         self.server_thread = threading.Thread(target=run_server, daemon=True)
         self.server_thread.start()
@@ -177,8 +205,28 @@ class ModbusServer:
     
     def stop(self):
         """Stop the Modbus TCP server."""
-        # Note: StartTcpServer doesn't have a clean stop method
+        server = self._server
+        loop = self._loop
+
+        # Clean shutdown for pymodbus 3.x (asyncio)
+        if server is not None and loop is not None:
+            try:
+                fut = asyncio.run_coroutine_threadsafe(server.shutdown(), loop)
+                fut.result(timeout=5)
+            except Exception:
+                pass
+
+        self._server = None
+
+        # Note: StartTcpServer fallback doesn't have a clean stop method
         self.running = False
+
+        if self.server_thread is not None:
+            try:
+                self.server_thread.join(timeout=5)
+            except Exception:
+                pass
+            self.server_thread = None
     
     def update_registers(self, roi_data: Dict[int, List[TrackedObject]], pixels_per_cm: float, fps: float = 30.0):
         """Update all Modbus registers with current detection data."""

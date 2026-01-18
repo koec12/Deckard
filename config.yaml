@@ -17,7 +17,7 @@ model:
 
 # ROI settings
 roi:
-  max_count: 1  # Maximum number of ROIs (0-9)
+  max_count: 2  # Maximum number of ROIs (0-9)
   colors:  # Colors for each ROI (BGR format)
     - [255, 0, 0]    # Blue for ROI 1
     - [0, 255, 0]    # Green for ROI 2

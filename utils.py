@@ -65,21 +65,6 @@ def draw_roi(image, roi, color, label="ROI"):
     cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
 
-def is_point_in_roi(point, roi):
-    """
-    Check if a point is inside an ROI.
-    
-    Args:
-        point: (x, y) coordinates
-        roi: ROI coordinates (x, y, w, h)
-        
-    Returns:
-        True if point is in ROI, False otherwise
-    """
-    px, py = point
-    rx, ry, rw, rh = roi
-    return rx <= px <= rx + rw and ry <= py <= ry + rh
-
 def get_centroid_from_bbox(bbox, fmt):
     """
     Calculate centroid from bounding box.

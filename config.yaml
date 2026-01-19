@@ -44,6 +44,7 @@ tracker:
   max_disappeared: 10  # Max frames before object is considered lost
   #max_distance: 100  # Max pixel distance for reidentification OK when 640x640
   max_distance: 250  # Max pixel distance for reidentification OK when 1280x1280
+  iou_prune_threshold: 0.01  # Min IoU to consider a match candidate (prunes matrix)
   pixels_per_cm: 10.0  # Ratio of pixels to centimeters for speed calculation
 
 # Image preprocessing

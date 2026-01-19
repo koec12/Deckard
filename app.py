@@ -5,11 +5,11 @@ import cv2
 import yaml
 import numpy as np
 from ultralytics import YOLO
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from collections import deque
 import time
 
-from utils import preprocess_image, draw_roi, is_point_in_roi, get_centroid_from_bbox
+from utils import preprocess_image, draw_roi, get_centroid_from_bbox, get_clahe
 from tracker import CustomTracker, TrackedObject
 from modbus_server import ModbusServer
 
@@ -50,6 +50,7 @@ class CylinderTrackerApp:
             class_change_frames=tracker_config['class_change_frames'],
             max_disappeared=tracker_config['max_disappeared'],
             max_distance=tracker_config['max_distance'],
+            iou_prune_threshold=tracker_config['iou_prune_threshold'],
             pixels_per_cm=tracker_config['pixels_per_cm']
         )
         self.pixels_per_cm = tracker_config['pixels_per_cm']
@@ -57,10 +58,7 @@ class CylinderTrackerApp:
         # Preprocessing settings
         self.clahe_clip_limit = self.config['preprocessing']['clahe_clip_limit']
         self.clahe_tile_grid_size = tuple(self.config['preprocessing']['clahe_tile_grid_size'])
-        self._clahe = cv2.createCLAHE(
-            clipLimit=self.clahe_clip_limit,
-            tileGridSize=self.clahe_tile_grid_size,
-        )
+        self._clahe = get_clahe(self.clahe_clip_limit, self.clahe_tile_grid_size)
         
         # Modbus settings
         modbus_config = self.config['modbus']
@@ -90,10 +88,10 @@ class CylinderTrackerApp:
         self.tracking_active = False
         
         # FPS tracking
-        self.fps_start_time = time.time()
-        self.fps_frame_count = 0
         self.current_fps = 30.0  # Default to 30, will be updated
         self.fps_history = deque(maxlen=10)  # Store recent FPS values for smoothing
+        self.fps_sum = 0.0
+
     
     def select_rois(self):
         """Allow user to select ROIs interactively."""
@@ -182,22 +180,26 @@ class CylinderTrackerApp:
                 centroid = get_centroid_from_bbox(bbox, fmt="xyxy")
 
                 mask_binary = None
-                if masks is not None and getattr(masks, 'data', None) is not None and i < len(masks.data):
+                if self.use_masks and masks is not None and getattr(masks, 'data', None) is not None and i < len(masks.data):
                     mask = masks.data[i].cpu().numpy()
                     mask_resized = cv2.resize(mask, (orig_w, orig_h))
                     mask_binary = (mask_resized > 0.5).astype(np.uint8) * 255
 
-                detections.append({
+                det = {
                     'centroid': centroid,
                     'class_id': class_id,
                     'confidence': confidence,
-                    'mask': mask_binary,
                     'bbox': bbox_tuple
-                })
+                }
+
+                if mask_binary is not None:
+                    det['mask'] = mask_binary
+
+                detections.append(det)
         
         return detections
     
-    def draw_detections(self, frame, roi_id: int, objects: List[TrackedObject], fps: float):
+    def draw_detections(self, frame, objects: List[TrackedObject], fps: float):
         """
         Draw detected objects on frame with appropriate colors.
         
@@ -227,7 +229,10 @@ class CylinderTrackerApp:
             # Draw label
             confidence_percent = int(obj.current_confidence * 100)
             label = f"ID:{obj.object_id} C:{class_id} {confidence_percent}%"
-            speed = obj.calculate_speed(self.pixels_per_cm, fps)
+            speed = getattr(obj, "cached_speed", None)
+            if speed is None:
+                speed = obj.calculate_speed(self.pixels_per_cm, fps)
+                obj.cached_speed = speed
             label += f" {speed:.1f}cm/s"
             
             # Label background
@@ -317,18 +322,18 @@ class CylinderTrackerApp:
                 frame_time = current_time - self.last_frame_time
                 if frame_time > 0:
                     frame_fps = 1.0 / frame_time
+                    if len(self.fps_history) == self.fps_history.maxlen:
+                        self.fps_sum -= self.fps_history[0]
                     self.fps_history.append(frame_fps)
-                    # Use average of recent FPS values for stability
+                    self.fps_sum += frame_fps
+                    # Use rolling average of recent FPS values for stability
                     if len(self.fps_history) > 0:
-                        self.current_fps = sum(self.fps_history) / len(self.fps_history)
+                        self.current_fps = self.fps_sum / len(self.fps_history)
                 self.last_frame_time = current_time
-                
-                # Also update the 1-second average for display
-                self.fps_frame_count += 1
-                elapsed = current_time - self.fps_start_time
-                if elapsed >= 1.0:
-                    self.fps_start_time = current_time
-                    self.fps_frame_count = 0
+
+                # Cache per-object speed once per frame (after FPS update)
+                for obj in self.tracker.get_tracked_objects():
+                    obj.cached_speed = obj.calculate_speed(self.pixels_per_cm, self.current_fps)
                 
                 # Update Modbus registers (pass current FPS)
                 self.modbus_server.update_registers(roi_objects, self.pixels_per_cm, self.current_fps)
@@ -341,7 +346,7 @@ class CylinderTrackerApp:
                 # Draw detections (pass current FPS)
                 for i, roi in enumerate(self.rois):
                     objects = roi_objects.get(i + 1, [])
-                    self.draw_detections(frame, i, objects, self.current_fps)
+                    self.draw_detections(frame, objects, self.current_fps)
                 
                 cv2.putText(frame, f"FPS: {self.current_fps:.1f}", 
                            (10, frame.shape[0] - 10),

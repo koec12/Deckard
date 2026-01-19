@@ -16,6 +16,7 @@ class ModbusDataStore:
     def __init__(self, max_rois=9, max_objects_per_roi=99):
         self.max_rois = max_rois
         self.max_objects_per_roi = max_objects_per_roi
+        self._last_object_counts = {roi_id: 0 for roi_id in range(1, max_rois + 1)}
         
         # ROI status registers: 11-19 (need up to index 19)
         # Object registers: 10 registers per object
@@ -92,8 +93,11 @@ class ModbusDataStore:
             # Object registers start at base_addr + (idx * 10)
             obj_base = base_addr + (idx * 10)
             
-            # Calculate speed (pass actual FPS)
-            speed = obj.calculate_speed(pixels_per_cm, fps)
+            # Use cached speed when available
+            speed = getattr(obj, "cached_speed", None)
+            if speed is None:
+                speed = obj.calculate_speed(pixels_per_cm, fps)
+                obj.cached_speed = speed
             
             # Prepare register values
             # xyy0: Object ID
@@ -115,11 +119,15 @@ class ModbusDataStore:
             
             self.holding_registers.setValues(obj_base, values)
         
-        # Clear registers for objects beyond current count
-        for idx in range(len(objects), self.max_objects_per_roi):
-            obj_base = base_addr + (idx * 10)
-            values = [0] * 10
-            self.holding_registers.setValues(obj_base, values)
+        # Clear registers only for slots that were previously used
+        current_count = len(objects)
+        last_count = self._last_object_counts.get(roi_id, 0)
+        if last_count > current_count:
+            for idx in range(current_count, last_count):
+                obj_base = base_addr + (idx * 10)
+                values = [0] * 10
+                self.holding_registers.setValues(obj_base, values)
+        self._last_object_counts[roi_id] = current_count
     
     def update_all_rois(self, roi_data: Dict[int, List[TrackedObject]], pixels_per_cm: float, fps: float = 30.0):
         """

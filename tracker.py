@@ -3,8 +3,8 @@ Custom object tracker with class locking and speed calculation.
 """
 import numpy as np
 from collections import deque
-from typing import Dict, List, Tuple, Optional
-from utils import calculate_detection_overlap, calculate_bbox_overlap
+from typing import Dict, List
+from utils import calculate_detection_overlap
 
 
 class TrackedObject:
@@ -24,6 +24,7 @@ class TrackedObject:
         self.centroid_history = deque(maxlen=10)  # For speed calculation
         self.speed_history = deque(maxlen=5)  # Store recent speed calculations for filtering
         self.filtered_speed = 0.0  # Filtered/averaged speed value
+        self.cached_speed = None
         self.disappeared = 0
         self.class_change_counter = 0
         self.last_class_change_candidate = None
@@ -184,12 +185,13 @@ class CustomTracker:
     
     def __init__(self, class_lock_threshold=0.7, class_change_threshold=0.8,
                  class_change_frames=5, max_disappeared=10, max_distance=100,
-                 pixels_per_cm=10.0):
+                 iou_prune_threshold=0.01, pixels_per_cm=10.0):
         self.class_lock_threshold = class_lock_threshold
         self.class_change_threshold = class_change_threshold
         self.class_change_frames = class_change_frames
         self.max_disappeared = max_disappeared
         self.max_distance = max_distance
+        self.iou_prune_threshold = iou_prune_threshold
         self.pixels_per_cm = pixels_per_cm
         
         self.next_id = 0
@@ -198,6 +200,32 @@ class CustomTracker:
     def _calculate_distance(self, point1, point2):
         """Calculate Euclidean distance between two points."""
         return np.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
+
+    def _calculate_iou_xywh(self, bbox1, bbox2) -> float:
+        """Calculate IoU between two bboxes in (x, y, w, h) format."""
+        x1_1, y1_1, w1, h1 = bbox1
+        x1_2, y1_2, w2, h2 = bbox2
+
+        x2_1, y2_1 = x1_1 + w1, y1_1 + h1
+        x2_2, y2_2 = x1_2 + w2, y1_2 + h2
+
+        x1_i = max(x1_1, x1_2)
+        y1_i = max(y1_1, y1_2)
+        x2_i = min(x2_1, x2_2)
+        y2_i = min(y2_1, y2_2)
+
+        if x2_i <= x1_i or y2_i <= y1_i:
+            return 0.0
+
+        intersection_area = (x2_i - x1_i) * (y2_i - y1_i)
+        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+        area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+        union_area = area1 + area2 - intersection_area
+
+        if union_area <= 0:
+            return 0.0
+
+        return intersection_area / union_area
     
     def update(self, detections: List[Dict]):
         """
@@ -242,9 +270,26 @@ class CustomTracker:
         matched_detections = set()
 
         if object_items:
+            iou_matrix = None
+
+            # Build IoU matrix for pruning if bboxes are available
+            if detections:
+                iou_matrix = [[0.0 for _ in range(len(detections))] for _ in range(len(object_items))]
+                for obj_idx, (_, obj) in enumerate(object_items):
+                    if obj.bbox is None:
+                        continue
+                    for det_idx, det in enumerate(detections):
+                        det_bbox = det.get('bbox')
+                        if det_bbox is None:
+                            continue
+                        iou_matrix[obj_idx][det_idx] = self._calculate_iou_xywh(obj.bbox, det_bbox)
+
             candidate_pairs = []
-            for obj_id, obj in object_items:
+            for obj_idx, (obj_id, obj) in enumerate(object_items):
                 for det_idx, det in enumerate(detections):
+                    if iou_matrix is not None and obj.bbox is not None and det.get('bbox') is not None:
+                        if iou_matrix[obj_idx][det_idx] < self.iou_prune_threshold:
+                            continue
                     distance = self._calculate_distance(obj.centroid, det['centroid'])
                     if distance < self.max_distance:
                         candidate_pairs.append((distance, obj_id, det_idx))

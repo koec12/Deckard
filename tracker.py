@@ -374,6 +374,11 @@ class CustomTracker:
     def get_tracked_objects(self) -> List[TrackedObject]:
         """Get list of all currently tracked objects."""
         return list(self.objects.values())
+
+    def reset(self):
+        """Reset tracker state and ID counter."""
+        self.objects.clear()
+        self.next_id = 0
     
     def get_objects_in_roi(self, roi) -> List[TrackedObject]:
         """

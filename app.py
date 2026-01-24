@@ -359,6 +359,9 @@ class CylinderTrackerApp:
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     self.tracking_active = False
+                elif key == ord('c'):
+                    self.tracker.reset()
+                    print("Tracker reset")
         
         except KeyboardInterrupt:
             print("\nInterrupted by user.")

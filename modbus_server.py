@@ -104,7 +104,9 @@ class ModbusDataStore:
             # xyy1: Class ID
             # xyy2: Confidence (0-100%)
             # xyy3: Speed (cm/s) - convert to integer (multiply by 10 for 0.1 cm/s precision)
-            # xyy4-xyy9: Reserved (0)
+            # xyy4: Centroid X
+            # xyy5: Centroid Y
+            # xyy6-xyy9: Reserved (0)
             
             confidence_percent = int(obj.current_confidence * 100)
             speed_int = int(speed * 10)  # 0.1 cm/s precision
@@ -114,7 +116,9 @@ class ModbusDataStore:
                 obj.current_class_id,    # xyy1
                 confidence_percent,      # xyy2
                 speed_int,               # xyy3
-                0, 0, 0, 0, 0, 0         # xyy4-xyy9 (reserved)
+                obj.centroid[0],         # xyy4 (centroid x)
+                obj.centroid[1],         # xyy5 (centroid y)
+                0, 0, 0, 0         # xyy6-xyy9 (reserved)
             ]
             
             self.holding_registers.setValues(obj_base, values)

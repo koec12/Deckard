@@ -3,7 +3,6 @@
 # Camera settings
 camera:
   source: 0  # Camera source (0 for default webcam, or path to video file)
-  #source: "./media/video6.mp4"
   width: 960
   height: 540
 
@@ -12,12 +11,12 @@ model:
   path: "models/enhanced_V4_180epoch.pt"  # Path to YOLO segmentation model
   task: "segment" # Task type: 'segment' for segmentation, 'detect' for detection
   use_masks: false  # Whether to use masks for segmentation
-  conf_threshold: 0.6  # Confidence threshold for detections
+  conf_threshold: 0.7  # Confidence threshold for detections
   iou_threshold: 0.75  # IoU threshold for NMS
 
 # ROI settings
 roi:
-  max_count: 2  # Maximum number of ROIs (0-9)
+  max_count: 4  # Maximum number of ROIs (0-9)
   colors:  # Colors for each ROI (BGR format)
     - [255, 0, 0]    # Blue for ROI 1
     - [0, 255, 0]    # Green for ROI 2
@@ -40,12 +39,11 @@ class_colors:
 tracker:
   class_lock_threshold: 0.8  # Confidence threshold to lock class
   class_change_threshold: 0.9  # Confidence threshold to allow class change
-  class_change_frames: 5  # Number of frames above threshold to allow class change
-  max_disappeared: 10  # Max frames before object is considered lost
-  #max_distance: 100  # Max pixel distance for reidentification OK when 640x640
-  max_distance: 250  # Max pixel distance for reidentification OK when 1280x1280
+  class_change_frames: 10  # Number of frames above threshold to allow class change
+  max_disappeared: 40  # Max frames before object is considered lost
+  max_distance: 250  # Max pixel distance for reidentification
   iou_prune_threshold: 0.01  # Min IoU to consider a match candidate (prunes matrix)
-  pixels_per_cm: 10.0  # Ratio of pixels to centimeters for speed calculation
+  pixels_per_cm: 21.3  # Ratio of pixels to centimeters for speed calculation
 
 # Image preprocessing
 preprocessing:

@@ -118,7 +118,7 @@ class ModbusDataStore:
                 speed_int,               # xyy3
                 obj.centroid[0],         # xyy4 (centroid x)
                 obj.centroid[1],         # xyy5 (centroid y)
-                0, 0, 0, 0         # xyy6-xyy9 (reserved)
+                0, 0, 0, 0               # xyy6-xyy9 (reserved)
             ]
             
             self.holding_registers.setValues(obj_base, values)

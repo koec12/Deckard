@@ -228,41 +228,46 @@ class CylinderTrackerApp:
             
             # Draw label
             confidence_percent = int(obj.current_confidence * 100)
-            label = f"ID:{obj.object_id} C:{class_id} {confidence_percent}%"
             speed = getattr(obj, "cached_speed", None)
             if speed is None:
                 speed = obj.calculate_speed(self.pixels_per_cm, fps)
                 obj.cached_speed = speed
-            label += f" {speed:.1f}cm/s"
-            
-            # Label background
-            (text_width, text_height), baseline = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-            )
+
+            label_line1 = f"ID:{obj.object_id} {speed:.1f}cm/s"
+            label_line2 = f"C:{class_id} {confidence_percent}%"
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.5
+            thickness = 1
+            line_spacing = 2
+
+            (w1, h1), _ = cv2.getTextSize(label_line1, font, font_scale, thickness)
+            (w2, h2), _ = cv2.getTextSize(label_line2, font, font_scale, thickness)
+            text_width = max(w1, w2)
+            total_text_height = h1 + h2 + line_spacing
 
             frame_h, frame_w = frame.shape[:2]
             tx = cx
-            ty = cy - 5
             if tx + text_width + 5 >= frame_w:
                 tx = max(0, frame_w - text_width - 6)
-            if ty - text_height - 5 <= 0:
-                ty = text_height + 6
+
+            top_y = cy - 5 - total_text_height
+            if top_y <= 0:
+                top_y = 6
+
+            line1_y = top_y + h1
+            line2_y = line1_y + line_spacing + h2
 
             bg_x1 = max(0, tx - 5)
-            bg_y1 = max(0, ty - text_height - 5)
+            bg_y1 = max(0, top_y - 5)
             bg_x2 = min(frame_w - 1, tx + text_width + 5)
-            bg_y2 = min(frame_h - 1, ty + 5)
+            bg_y2 = min(frame_h - 1, line2_y + 5)
             if bg_x2 > bg_x1 and bg_y2 > bg_y1:
                 cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), color, -1)
-            
-            # Label text
-            cv2.putText(
-                frame, label,
-                (tx, ty),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                (255, 255, 255) if sum(color) < 400 else (0, 0, 0),
-                1
-            )
+
+            text_color = (255, 255, 255) if sum(color) < 400 else (0, 0, 0)
+            cv2.putText(frame, label_line1, (tx, line1_y), font, font_scale, text_color, thickness)
+            cv2.putText(frame, label_line2, (tx, line2_y), font, font_scale, text_color, thickness)
     
     def run(self):
         """Main application loop."""

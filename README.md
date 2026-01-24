@@ -57,6 +57,7 @@ python app.py
 
 - `s`: Start/continue ROI selection
 - `q`: Finish ROI selection and start tracking (or quit if already tracking)
+- `c`: Reset tracker
 - `Esc`: Cancel current ROI selection
 - `Enter`: Confirm current ROI selection
 
@@ -86,7 +87,9 @@ Register layout (xyy0-xyy9 where x=ROI, yy=object index):
 - xyy1: Class ID (0=Black, 1=Red, 2=Silver)
 - xyy2: Confidence (0-100%)
 - xyy3: Speed (cm/s)
-- xyy4-xyy9: Reserved
+- xyy4: X-coordinates centroid
+- xyy5: Y-coordinates centroid
+- xyy6-xyy9: Reserved
 
 ## Configuration
 
@@ -113,6 +116,36 @@ Edit `config.yaml` to customize:
 
 This code is a work in progress and is heavily vibe-coded. Expect API changes, refactors, or added features.
 Created for the author's studies main project; not production-ready.
+
+## Optimizing for CUDA (INT8 Quantization)
+
+INT8 quantization can boost inference speed with a small accuracy trade-off. Perform this on the final target hardware.
+
+1. Update GPU drivers.
+2. Check CUDA version: `nvidia-smi`.
+3. Install the matching PyTorch build from [pytorch.org](https://pytorch.org/).
+   - Example: `pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu130`
+4. Install TensorRT: `pip install tensorrt`.
+5. Prepare a dataset YAML that points to `valid` set with images + labels (INT8 needs lots of data).
+   - Tip: Move train/test images + labels into `valid` to increase samples.
+6. Export to TensorRT:
+
+```python
+from ultralytics import YOLO
+
+model = YOLO(r"C:\Path\to\model.pt")
+
+model.export(
+    format="engine",
+    dynamic=True,
+    batch=1,
+    workspace=None,
+    int8=True,
+    data=r"C:\Path\to\data.yaml"
+)
+```
+
+The output `.engine` file replaces the `.pt` model. Update `config.yaml` accordingly.
 
 ## License
 

@@ -4,7 +4,7 @@ Custom object tracker with class locking and speed calculation.
 import numpy as np
 from collections import deque
 from typing import Dict, List
-from utils import calculate_detection_overlap
+from utils import calculate_detection_overlap, calculate_bbox_overlap
 
 
 class TrackedObject:
@@ -393,9 +393,17 @@ class CustomTracker:
         rx, ry, rw, rh = roi
         objects_in_roi = []
         
+        roi_bbox = (rx, ry, rw, rh)
+
         for obj in self.objects.values():
-            cx, cy = obj.centroid
-            if rx <= cx <= rx + rw and ry <= cy <= ry + rh:
+            if obj.bbox is None:
+                cx, cy = obj.centroid
+                if rx <= cx <= rx + rw and ry <= cy <= ry + rh:
+                    objects_in_roi.append(obj)
+                continue
+
+            overlap_ratio = calculate_bbox_overlap(obj.bbox, roi_bbox, fmt1="xywh", fmt2="xywh")
+            if overlap_ratio > 0.0:
                 objects_in_roi.append(obj)
         
         return objects_in_roi

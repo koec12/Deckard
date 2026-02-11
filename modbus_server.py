@@ -16,6 +16,8 @@ class ModbusDataStore:
     def __init__(self, max_rois=9, max_objects_per_roi=99):
         self.max_rois = max_rois
         self.max_objects_per_roi = max_objects_per_roi
+        self.command_register_addr = 1
+        self._command_lock = threading.Lock()
         self._last_object_counts = {roi_id: 0 for roi_id in range(1, max_rois + 1)}
         
         # ROI status registers: 11-19 (need up to index 19)
@@ -38,6 +40,14 @@ class ModbusDataStore:
         
         # Create server context
         self.server_context = ModbusServerContext(devices=self.device_context, single=True)
+
+    def read_and_clear_command_register(self) -> int:
+        """Read command register and clear it when non-zero."""
+        with self._command_lock:
+            value = self.holding_registers.getValues(self.command_register_addr, count=1)[0]
+            if value:
+                self.holding_registers.setValues(self.command_register_addr, [0])
+            return value
     
     def update_roi_status(self, roi_id: int, objects: List[TrackedObject]):
         """
@@ -244,4 +254,10 @@ class ModbusServer:
         """Update all Modbus registers with current detection data."""
         if self.running:
             self.data_store.update_all_rois(roi_data, pixels_per_cm, fps)
+
+    def get_and_clear_command_register(self) -> int:
+        """Read and clear the command register."""
+        if not self.running:
+            return 0
+        return self.data_store.read_and_clear_command_register()
 

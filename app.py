@@ -364,7 +364,8 @@ class CylinderTrackerApp:
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     self.tracking_active = False
-                elif key == ord('c'):
+                # Check for tracker reset command (either 'c' key or Modbus command register bit 0)
+                elif (key == ord('c')) or (self.modbus_server.get_and_clear_command_register() & 0x1):
                     self.tracker.reset()
                     print("Tracker reset")
         

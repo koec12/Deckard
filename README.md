@@ -63,6 +63,12 @@ python app.py
 
 ### Modbus TCP Registers
 
+#### Command Register (1)
+- Register 1: Command register (PLC writes)
+- Bit 0: Reset tracker (same behavior as pressing `c`)
+- Bits 1-15: Reserved
+- Behavior: The value is read and cleared to 0 after the command is processed
+
 #### ROI Status Registers (11-19)
 - Register 11: ROI 1 status
 - Register 12: ROI 2 status

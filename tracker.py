@@ -6,7 +6,6 @@ from collections import deque
 from typing import Dict, List
 from utils import calculate_detection_overlap, calculate_bbox_overlap
 
-
 class TrackedObject:
     """Represents a tracked object with its properties."""
     

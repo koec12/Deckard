@@ -4,7 +4,6 @@ Utility functions for image preprocessing and visualization.
 import cv2
 import numpy as np
 
-
 _CLAHE_CACHE = {}
 
 

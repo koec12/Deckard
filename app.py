@@ -8,10 +8,15 @@ from ultralytics import YOLO
 from typing import List, Dict, Tuple
 from collections import deque
 import time
+import logging
 
 from utils import preprocess_image, draw_roi, get_centroid_from_bbox, get_clahe
 from tracker import CustomTracker, TrackedObject
 from modbus_server import ModbusServer
+
+# Setup logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 
 class CylinderTrackerApp:
@@ -79,9 +84,9 @@ class CylinderTrackerApp:
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.camera_height)
         
         # Initialize YOLO model
-        print(f"Loading YOLO model from {self.model_path}...")
+        logger.info(f"Loading YOLO model from {self.model_path}...")
         self.model = YOLO(self.model_path)
-        print("Model loaded successfully.")
+        logger.info("Model loaded successfully.")
         
         # ROI storage
         self.rois: List[Tuple[int, int, int, int]] = []  # List of (x, y, w, h) tuples
@@ -95,10 +100,10 @@ class CylinderTrackerApp:
     
     def select_rois(self):
         """Allow user to select ROIs interactively."""
-        print("\nROI Selection Mode")
-        print("Press 's' to start selecting ROIs")
-        print("Click and drag to select a region, then press Enter to confirm or Esc to cancel")
-        print("Press 'q' when done selecting ROIs")
+        logger.info("Entering ROI Selection Mode")
+        logger.info("Press 's' to start selecting ROIs")
+        logger.info("Click and drag to select a region, then press Enter to confirm or Esc to cancel")
+        logger.info("Press 'q' when done selecting ROIs")
         
         self.rois = []
         selecting = True
@@ -125,24 +130,24 @@ class CylinderTrackerApp:
             
             if key == ord('s'):
                 if len(self.rois) >= self.max_rois:
-                    print(f"Maximum number of ROIs ({self.max_rois}) reached.")
+                    logger.info(f"Maximum number of ROIs ({self.max_rois}) reached.")
                     continue
                 
                 # Select ROI
                 roi = cv2.selectROI("ROI Selection", frame, False)
                 if roi[2] > 0 and roi[3] > 0:  # Valid ROI
                     self.rois.append(roi)
-                    print(f"ROI {len(self.rois)} selected: {roi}")
+                    logger.info(f"ROI {len(self.rois)} selected: {roi}")
                 cv2.destroyWindow("ROI Selection")
             
             elif key == ord('q'):
                 if len(self.rois) > 0:
                     selecting = False
                 else:
-                    print("Please select at least one ROI before starting tracking.")
+                    logger.info("Please select at least one ROI before starting tracking.")
         
         cv2.destroyAllWindows()
-        print(f"\nROI selection complete. {len(self.rois)} ROIs selected.")
+        logger.info(f"ROI selection complete. {len(self.rois)} ROIs selected.")
         return len(self.rois) > 0
     
     def process_detections(self, results) -> List[Dict]:
@@ -273,7 +278,7 @@ class CylinderTrackerApp:
         """Main application loop."""
         # Select ROIs
         if not self.select_rois():
-            print("No ROIs selected. Exiting.")
+            logger.info("No ROIs selected. Exiting.")
             return
         
         # Start Modbus server
@@ -281,7 +286,7 @@ class CylinderTrackerApp:
         
         # Start tracking
         self.tracking_active = True
-        print("\nTracking started. Press 'q' to quit.")
+        logger.info("Tracking started. Press 'q' to quit.")
         
         # Initialize frame timing for FPS calculation
         self.last_frame_time = time.time()
@@ -290,7 +295,7 @@ class CylinderTrackerApp:
             while self.tracking_active:
                 ret, frame = self.cap.read()
                 if not ret:
-                    print("Failed to read frame from camera.")
+                    logger.error("Failed to read frame from camera.")
                     break
                 
                 # Preprocess image
@@ -367,16 +372,16 @@ class CylinderTrackerApp:
                 # Check for tracker reset command (either 'c' key or Modbus command register bit 0)
                 elif (key == ord('c')) or (self.modbus_server.get_and_clear_command_register() & 0x1):
                     self.tracker.reset()
-                    print("Tracker reset")
+                    logger.info("Tracker reset")
         
         except KeyboardInterrupt:
-            print("\nInterrupted by user.")
+            logger.info("Interrupted by user.")
         finally:
             # Cleanup
             self.cap.release()
             cv2.destroyAllWindows()
             self.modbus_server.stop()
-            print("Application closed.")
+            logger.info("Application closed.")
 
 
 def main():
@@ -385,7 +390,7 @@ def main():
         app = CylinderTrackerApp()
         app.run()
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
         import traceback
         traceback.print_exc()
 

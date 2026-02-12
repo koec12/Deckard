@@ -8,6 +8,9 @@ from pymodbus.datastore import ModbusSequentialDataBlock
 import threading
 from typing import Dict, List, Optional
 from tracker import TrackedObject
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ModbusDataStore:
@@ -210,7 +213,7 @@ class ModbusServer:
                         address=(self.host, self.port),
                     )
             except Exception as e:
-                print(f"Modbus server error: {e}")
+                logger.error(f"Modbus server error: {e}")
             finally:
                 loop = self._loop
                 self._loop = None
@@ -223,7 +226,7 @@ class ModbusServer:
         self.server_thread = threading.Thread(target=run_server, daemon=True)
         self.server_thread.start()
         self.running = True
-        print(f"Modbus TCP server started on {self.host}:{self.port}")
+        logger.info(f"Modbus TCP server started on {self.host}:{self.port}")
     
     def stop(self):
         """Stop the Modbus TCP server."""
